@@ -1,0 +1,108 @@
+#!/bin/bash -x
+
+if [[ $1 == "" ]]
+then
+  echo "You must specify the copy-to device as the first argument"
+  echo '--    "backup sda"   --'
+  exit
+fi
+
+echo "5 second timeout..."
+echo "Type full if overwriting SD card(not incremental)"
+read -t 5 -p "5 second timeout... : " full
+
+
+
+# unmount any partitions on the target device
+devdir="dev"
+
+a=9
+while [ $a -gt 0 ]
+do
+  sudo umount /$devdir/$1$a 2>/dev/null
+  a=`expr $a - 1`
+done
+
+src=$(mktemp -d)
+dst=$(mktemp -d)
+
+if [[ $full == "full" ]]
+then
+  # wipe the FAT on the target
+
+  sudo dd if=/dev/zero of=/$devdir/$1 bs=512 count=1
+
+  # prepare mount points
+
+  # find the last partition on the source
+
+  line=$(sudo parted /dev/mmcblk0 unit s print | tail -n 2 | head -n -1)
+  lastpnum=$(echo $line | cut -d ' ' -f 1)
+
+  # prepare the new FAT
+
+  sudo parted /$devdir/$1 mklabel msdos
+
+fi
+
+
+# mirror the partitions on mmcblk0
+
+sudo parted /dev/mmcblk0 unit s print | tail -n +8 | head -n -1 | while read line ; do
+pnum=$(echo $line | cut -d ' ' -f 1)
+ppnum=$pnum
+if [[ $1 = *"nbd"* ]]
+then
+  ppnum="p$pnum"
+fi
+start=$(echo $line | cut -d ' ' -f 2)
+end=$(echo $line | cut -d ' ' -f 3)
+type=$(echo $line | cut -d ' ' -f 5)
+fstype=$(echo $line | cut -d ' ' -f 6)
+flags=$(echo $line | cut -d ' ' -f 7)
+if [[ "$type" == "extended" && $full == "full" ]]; then
+  sudo parted /$devdir/$1 -- mkpart extended $start -1s
+elif [[ "$type" != "extended" && $full == "full" ]]; then
+  if [ "$pnum" == "$lastpnum" ]; then
+    sudo parted /$devdir/$1 -- mkpart $type $fstype $start -1s
+  else
+    sudo parted /$devdir/$1 mkpart $type $fstype $start $end
+  fi
+  sudo partprobe
+
+  # create file systems
+
+  if [ "$fstype" == "fat32" ] || [ "$fstype" == "fat16" ]; then
+    sudo mkfs.fat /$devdir/$1$ppnum
+  fi
+  if [ "$fstype" == "ext4" ]; then
+    sudo mkfs.ext4 -F /$devdir/$1$ppnum
+  fi
+  if [ "$flags" == "lba" ]; then
+    sudo parted /$devdir/$1 set $pnum lba on
+  else
+    sudo parted /$devdir/$1 set $pnum lba off
+  fi
+
+fi
+partitions="$(cat /proc/partitions|awk '{print $4}')"
+if echo "$partitions"|grep $1$ppnum 
+then 
+  # mount and copy
+  echo "Mounting: /$devdir/$1$ppnum $dst"
+  sudo mount /$devdir/$1$ppnum $dst
+  sudo mount /dev/mmcblk0p$pnum $src
+  sudo rsync -aP --inplace --delete --exclude $src --exclude $dst $src/. $dst/.
+  sudo umount $dst
+  sudo umount $src
+else
+  echo
+  echo "!!!!!!!!!!!!!!!!!!!"
+  echo "Matching partiton $1$ppnum doesn\'t exist on target."
+  echo "You must run a FULL backup."
+  echo 
+  break
+fi
+done
+rmdir $src
+rmdir $dst
