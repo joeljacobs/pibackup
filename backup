@@ -1,16 +1,31 @@
-#!/bin/bash -x
+#!/bin/bash
+
+
 
 if [[ $1 == "" ]]
 then
   echo "You must specify the copy-to device as the first argument"
-  echo '--    "backup sda"   --'
+  echo "You may also specify a source device as the 2nd argument. Default= mmcblk0"
+  echo "If you want no prompts and incremental, specify -a as the last argument"
+  echo "i.e.: backup sda [nbd0] [-a]"
+  echo
   exit
 fi
 
-echo "5 second timeout..."
-echo "Type full if overwriting SD card(not incremental)"
-read -t 5 -p "5 second timeout... : " full
+if [[ $2 == "" || $2 == "-a" ]]
+then
+  source=mmcblk0
+else
+  source=$2
+fi
 
+if [[ "$@" == *"-a"* ]]
+then
+  echo "Automatic. Source=$source Destination=$1 Incremental"
+else
+  echo "Type full if overwriting SD card(not incremental)"
+  read full
+fi
 
 
 # unmount any partitions on the target device
@@ -36,7 +51,7 @@ then
 
   # find the last partition on the source
 
-  line=$(sudo parted /dev/mmcblk0 unit s print | tail -n 2 | head -n -1)
+  line=$(sudo parted /dev/${source} unit s print | tail -n 2 | head -n -1)
   lastpnum=$(echo $line | cut -d ' ' -f 1)
 
   # prepare the new FAT
@@ -46,9 +61,9 @@ then
 fi
 
 
-# mirror the partitions on mmcblk0
+# mirror the partitions on ${source}
 
-sudo parted /dev/mmcblk0 unit s print | tail -n +8 | head -n -1 | while read line ; do
+sudo parted /dev/${source} unit s print | tail -n +8 | head -n -1 | while read line ; do
 pnum=$(echo $line | cut -d ' ' -f 1)
 ppnum=$pnum
 if [[ $1 = *"nbd"* ]]
@@ -91,7 +106,7 @@ then
   # mount and copy
   echo "Mounting: /$devdir/$1$ppnum $dst"
   sudo mount /$devdir/$1$ppnum $dst
-  sudo mount /dev/mmcblk0p$pnum $src
+  sudo mount /dev/${source}p$pnum $src
   sudo rsync -aP --inplace --delete --exclude $src --exclude $dst $src/. $dst/.
   sudo umount $dst
   sudo umount $src
