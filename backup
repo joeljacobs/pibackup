@@ -93,13 +93,12 @@ elif [[ "$type" != "extended" && $full == "full" ]]; then
   if [ "$fstype" == "ext4" ]; then
     sudo mkfs.ext4 -F /$devdir/$1$ppnum
   fi
+fi
   if [ "$flags" == "lba" ]; then
     sudo parted /$devdir/$1 set $pnum lba on
   else
     sudo parted /$devdir/$1 set $pnum lba off
   fi
-
-fi
 partitions="$(cat /proc/partitions|awk '{print $4}')"
 if echo "$partitions"|grep $1$ppnum 
 then 
