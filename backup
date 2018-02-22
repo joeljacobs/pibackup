@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Notes to use with disk images (sparse):
+#dd if=/dev/zero of=/mnt/tmp/piImage.raw bs=1G count=0 seek=6
+#qemu-nbd -c /dev/nbd0 /mnt/tmp/piImage.raw
+#qemu-nbd -d /dev/nbd0
+#
+#If you use small sparse image like above, you'll need to re-partition when finished.
+#This means deleting the exended partition and re-adding it along with all of the logical partitions. Then setting the LBA settings correctly. Then running fsck.ext4 and resize2fs.
 
 
 if [[ $1 == "" ]]
@@ -84,6 +91,7 @@ elif [[ "$type" != "extended" && $full == "full" ]]; then
     sudo parted /$devdir/$1 mkpart $type $fstype $start $end
   fi
   sudo partprobe
+  sfdisk -R /$devdir/$1
 
   # create file systems
 
@@ -99,6 +107,7 @@ fi
   else
     sudo parted /$devdir/$1 set $pnum lba off
   fi
+  sfdisk -R /$devdir/$1
 partitions="$(cat /proc/partitions|awk '{print $4}')"
 if echo "$partitions"|grep $1$ppnum 
 then 
