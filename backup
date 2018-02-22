@@ -24,7 +24,7 @@ then
   echo "Automatic. Source=$source Destination=$1 Incremental"
 else
   echo "Type full if overwriting SD card(not incremental)"
-  read full
+  read -t 5 full
 fi
 
 
